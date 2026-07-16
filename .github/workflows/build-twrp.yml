@@ -9,7 +9,7 @@ on:
         type: string
         default: 'https://github.com/yourusername/android_device_xiaomi_beryllium.git'
       device_tree_branch:
-        description: '设备树分支'
+        description: '设备树分支（如 android-12.1）'
         required: true
         type: string
         default: 'android-12.1'
@@ -22,23 +22,17 @@ on:
         required: true
         type: string
       twrp_branch:
-        description: 'TWRP 源码分支'
+        description: 'TWRP 源码分支（必须与设备树分支匹配，推荐 twrp-12.1，适用 Android 10+）'
         required: true
-        type: choice
-        options:
-          - 'android-13.0'
-          - 'android-12.1'
-          - 'android-11.0'
-          - 'android-10.0'
-          - 'android-9.0'
-        default: 'android-12.1'
+        type: string
+        default: 'twrp-12.1'  # 修正默认分支
       extra_env:
         description: '额外编译环境变量（可选）'
         required: false
         type: string
         default: ''
       create_release:
-        description: '是否创建 Release'
+        description: '是否创建 Release 并上传 recovery.img'
         required: false
         type: boolean
         default: false
@@ -77,6 +71,7 @@ jobs:
         run: |
           mkdir -p twrp
           cd twrp
+          # 使用正确的分支名（twrp-12.1 适用于 Android 10+）
           repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b ${{ github.event.inputs.twrp_branch }} --depth=1
 
       - name: Clone device tree
@@ -91,7 +86,7 @@ jobs:
           cd twrp
           repo sync --current-branch --no-tags --no-clone-bundle --no-repo-verify --force-sync -j$(nproc)
 
-      - name: Set up build environment variables
+      - name: Set up environment variables
         run: |
           echo "TARGET_PRODUCT=omni_${{ github.event.inputs.codename }}" >> $GITHUB_ENV
           echo "TARGET_BUILD_VARIANT=eng" >> $GITHUB_ENV
@@ -111,7 +106,7 @@ jobs:
           name: twrp-${{ github.event.inputs.codename }}
           path: twrp/${{ env.OUTPUT_DIR }}/target/product/${{ github.event.inputs.codename }}/recovery.img
 
-      - name: Create release
+      - name: Create release (optional)
         if: ${{ github.event.inputs.create_release }}
         uses: softprops/action-gh-release@v1
         with:
