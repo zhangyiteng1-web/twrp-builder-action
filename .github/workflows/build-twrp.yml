@@ -1,0 +1,119 @@
+name: Build TWRP
+
+on:
+  workflow_dispatch:
+    inputs:
+      device_tree_repo:
+        description: '设备树仓库地址（HTTPS）'
+        required: true
+        type: string
+        default: 'https://github.com/yourusername/android_device_xiaomi_beryllium.git'
+      device_tree_branch:
+        description: '设备树分支（如 android-12.1）'
+        required: true
+        type: string
+        default: 'android-12.1'
+      manufacturer:
+        description: '设备制造商（小写）'
+        required: true
+        type: string
+      codename:
+        description: '设备代号（小写）'
+        required: true
+        type: string
+      twrp_branch:
+        description: 'TWRP 源码分支（通常为 android-12.1）'
+        required: true
+        type: string
+        default: 'android-12.1'
+      extra_env:
+        description: '额外编译环境变量（可选）'
+        required: false
+        type: string
+        default: ''
+
+env:
+  OUTPUT_DIR: out  # TWRP 默认输出目录
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04  # 推荐使用 22.04，兼容性较好
+    steps:
+      - name: Checkout repository（用于获取脚本）
+        uses: actions/checkout@v4
+
+      - name: Set up build environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git-core gnupg flex bison gperf build-essential \
+            zip curl zlib1g-dev gcc-multilib g++-multilib \
+            libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev \
+            libx11-dev lib32z-dev libgl1-mesa-dev \
+            libxml2-utils xsltproc unzip fontconfig \
+            python3 python3-pip python3-venv
+          # 安装 repo
+          mkdir -p ~/.bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/.bin/repo
+          chmod a+x ~/.bin/repo
+          echo "$HOME/.bin" >> $GITHUB_PATH
+
+      - name: Configure Git identity
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      - name: Initialize TWRP source
+        run: |
+          mkdir -p twrp
+          cd twrp
+          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b ${{ github.event.inputs.twrp_branch }} --depth=1
+          # 如果需要自定义 manifest，可以在这里添加
+
+      - name: Clone device tree
+        run: |
+          cd twrp
+          # 创建设备树目录
+          mkdir -p device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}
+          cd device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}
+          git clone --depth=1 -b ${{ github.event.inputs.device_tree_branch }} ${{ github.event.inputs.device_tree_repo }} .
+
+      - name: Sync TWRP source
+        run: |
+          cd twrp
+          repo sync --current-branch --no-tags --no-clone-bundle --no-repo-verify --force-sync -j$(nproc)
+
+      - name: Set up build environment variables
+        run: |
+          echo "TARGET_PRODUCT=omni_${{ github.event.inputs.codename }}" >> $GITHUB_ENV
+          echo "TARGET_BUILD_VARIANT=eng" >> $GITHUB_ENV
+          echo "OUT_DIR=${{ env.OUTPUT_DIR }}" >> $GITHUB_ENV
+          # 添加额外环境变量
+          echo "${{ github.event.inputs.extra_env }}" >> $GITHUB_ENV
+
+      - name: Build TWRP
+        run: |
+          cd twrp
+          source build/envsetup.sh
+          lunch omni_${{ github.event.inputs.codename }}-eng
+          make -j$(nproc) recoveryimage
+
+      - name: Upload recovery image as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: twrp-${{ github.event.inputs.codename }}
+          path: twrp/${{ env.OUTPUT_DIR }}/target/product/${{ github.event.inputs.codename }}/recovery.img
+
+      - name: Create release (optional)
+        if: github.event.inputs.create_release == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: twrp-${{ github.event.inputs.codename }}-${{ github.run_number }}
+          name: "TWRP for ${{ github.event.inputs.manufacturer }} ${{ github.event.inputs.codename }}"
+          body: |
+            ## 自动编译的 TWRP
+            - **设备**: ${{ github.event.inputs.manufacturer }} ${{ github.event.inputs.codename }}
+            - **构建时间**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+            - **源码分支**: ${{ github.event.inputs.twrp_branch }}
+          files: |
+            twrp/${{ env.OUTPUT_DIR }}/target/product/${{ github.event.inputs.codename }}/recovery.img
