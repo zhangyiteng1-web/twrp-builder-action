@@ -9,7 +9,7 @@ on:
         type: string
         default: 'https://github.com/yourusername/android_device_xiaomi_beryllium.git'
       device_tree_branch:
-        description: '设备树分支（如 android-12.1）'
+        description: '设备树分支'
         required: true
         type: string
         default: 'android-12.1'
@@ -22,24 +22,35 @@ on:
         required: true
         type: string
       twrp_branch:
-        description: 'TWRP 源码分支（通常为 android-12.1）'
+        description: 'TWRP 源码分支'
         required: true
-        type: string
+        type: choice
+        options:
+          - 'android-13.0'
+          - 'android-12.1'
+          - 'android-11.0'
+          - 'android-10.0'
+          - 'android-9.0'
         default: 'android-12.1'
       extra_env:
         description: '额外编译环境变量（可选）'
         required: false
         type: string
         default: ''
+      create_release:
+        description: '是否创建 Release'
+        required: false
+        type: boolean
+        default: false
 
 env:
-  OUTPUT_DIR: out  # TWRP 默认输出目录
+  OUTPUT_DIR: out
 
 jobs:
   build:
-    runs-on: ubuntu-22.04  # 推荐使用 22.04，兼容性较好
+    runs-on: ubuntu-22.04
     steps:
-      - name: Checkout repository（用于获取脚本）
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up build environment
@@ -52,7 +63,6 @@ jobs:
             libx11-dev lib32z-dev libgl1-mesa-dev \
             libxml2-utils xsltproc unzip fontconfig \
             python3 python3-pip python3-venv
-          # 安装 repo
           mkdir -p ~/.bin
           curl https://storage.googleapis.com/git-repo-downloads/repo > ~/.bin/repo
           chmod a+x ~/.bin/repo
@@ -68,12 +78,10 @@ jobs:
           mkdir -p twrp
           cd twrp
           repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b ${{ github.event.inputs.twrp_branch }} --depth=1
-          # 如果需要自定义 manifest，可以在这里添加
 
       - name: Clone device tree
         run: |
           cd twrp
-          # 创建设备树目录
           mkdir -p device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}
           cd device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}
           git clone --depth=1 -b ${{ github.event.inputs.device_tree_branch }} ${{ github.event.inputs.device_tree_repo }} .
@@ -88,7 +96,6 @@ jobs:
           echo "TARGET_PRODUCT=omni_${{ github.event.inputs.codename }}" >> $GITHUB_ENV
           echo "TARGET_BUILD_VARIANT=eng" >> $GITHUB_ENV
           echo "OUT_DIR=${{ env.OUTPUT_DIR }}" >> $GITHUB_ENV
-          # 添加额外环境变量
           echo "${{ github.event.inputs.extra_env }}" >> $GITHUB_ENV
 
       - name: Build TWRP
@@ -104,8 +111,8 @@ jobs:
           name: twrp-${{ github.event.inputs.codename }}
           path: twrp/${{ env.OUTPUT_DIR }}/target/product/${{ github.event.inputs.codename }}/recovery.img
 
-      - name: Create release (optional)
-        if: github.event.inputs.create_release == 'true'
+      - name: Create release
+        if: ${{ github.event.inputs.create_release }}
         uses: softprops/action-gh-release@v1
         with:
           tag_name: twrp-${{ github.event.inputs.codename }}-${{ github.run_number }}
