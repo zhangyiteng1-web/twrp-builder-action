@@ -22,10 +22,10 @@ on:
         required: true
         type: string
       twrp_branch:
-        description: 'TWRP 源码分支（必须与设备树分支匹配，推荐 twrp-12.1，适用 Android 10+）'
+        description: 'TWRP 源码分支（推荐 twrp-12.1，适用 Android 10+）'
         required: true
         type: string
-        default: 'twrp-12.1'  # 修正默认分支
+        default: 'twrp-12.1'
       extra_env:
         description: '额外编译环境变量（可选）'
         required: false
@@ -71,7 +71,6 @@ jobs:
         run: |
           mkdir -p twrp
           cd twrp
-          # 使用正确的分支名（twrp-12.1 适用于 Android 10+）
           repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b ${{ github.event.inputs.twrp_branch }} --depth=1
 
       - name: Clone device tree
@@ -85,6 +84,15 @@ jobs:
         run: |
           cd twrp
           repo sync --current-branch --no-tags --no-clone-bundle --no-repo-verify --force-sync -j$(nproc)
+
+      - name: Create missing vendor/omni files
+        run: |
+          cd twrp
+          mkdir -p vendor/omni/config
+          touch vendor/omni/config/common.mk
+          # 某些设备树也可能需要以下文件，一并创建占位
+          mkdir -p vendor/omni/config
+          echo "# Placeholder" > vendor/omni/config/common.mk
 
       - name: Set up environment variables
         run: |
