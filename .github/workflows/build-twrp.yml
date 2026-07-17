@@ -94,17 +94,30 @@ jobs:
         run: |
           TWRP_BRANCH="${{ github.event.inputs.twrp_branch }}"
           if [[ "$TWRP_BRANCH" == "twrp-9.0" || "$TWRP_BRANCH" == "twrp-8.0" || "$TWRP_BRANCH" == "twrp-7.0" || "$TWRP_BRANCH" == "twrp-6.0" ]]; then
-            BOARD_CONFIG="twrp/device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}/BoardConfig.mk"
+            DEVICE_DIR="twrp/device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}"
+            BOARD_CONFIG="${DEVICE_DIR}/BoardConfig.mk"
+            DEVICE_MK="${DEVICE_DIR}/device.mk"
+            
+            # 向 BoardConfig.mk 追加
             if [ -f "$BOARD_CONFIG" ]; then
-              # 检查是否已经包含 TARGET_PLATFORM_VERSION，若没有则追加
               if ! grep -q "TARGET_PLATFORM_VERSION" "$BOARD_CONFIG"; then
                 echo "TARGET_PLATFORM_VERSION := PPR1" >> "$BOARD_CONFIG"
-                echo "已添加 TARGET_PLATFORM_VERSION 到 BoardConfig.mk"
+                echo "PLATFORM_VERSION := PPR1" >> "$BOARD_CONFIG"
+                echo "已追加到 BoardConfig.mk"
               else
-                echo "BoardConfig.mk 已包含 TARGET_PLATFORM_VERSION，跳过"
+                echo "BoardConfig.mk 已包含相关定义"
               fi
             else
-              echo "警告: BoardConfig.mk 不存在，将在环境变量中强制设置"
+              echo "BoardConfig.mk 不存在，将尝试 device.mk"
+            fi
+            
+            # 向 device.mk 追加（如果存在）
+            if [ -f "$DEVICE_MK" ]; then
+              if ! grep -q "TARGET_PLATFORM_VERSION" "$DEVICE_MK"; then
+                echo "TARGET_PLATFORM_VERSION := PPR1" >> "$DEVICE_MK"
+                echo "PLATFORM_VERSION := PPR1" >> "$DEVICE_MK"
+                echo "已追加到 device.mk"
+              fi
             fi
           fi
 
@@ -137,15 +150,16 @@ jobs:
       - name: Build TWRP
         run: |
           cd twrp
-          # 针对旧分支强制设置平台版本
           TWRP_BRANCH="${{ github.event.inputs.twrp_branch }}"
           if [[ "$TWRP_BRANCH" == "twrp-9.0" || "$TWRP_BRANCH" == "twrp-8.0" || "$TWRP_BRANCH" == "twrp-7.0" || "$TWRP_BRANCH" == "twrp-6.0" ]]; then
             export TARGET_PLATFORM_VERSION=PPR1
-            echo "已强制设置 TARGET_PLATFORM_VERSION=PPR1"
+            export PLATFORM_VERSION=PPR1
+            echo "强制导出 TARGET_PLATFORM_VERSION=PPR1, PLATFORM_VERSION=PPR1"
           fi
           source build/envsetup.sh
           lunch omni_${{ github.event.inputs.codename }}-${TARGET_BUILD_VARIANT}
-          make -j$(nproc) recoveryimage
+          # 即使上述未生效，在 make 命令中直接传递参数
+          make -j$(nproc) recoveryimage TARGET_PLATFORM_VERSION=PPR1 PLATFORM_VERSION=PPR1
 
       - name: Upload recovery image as artifact
         uses: actions/upload-artifact@v4
