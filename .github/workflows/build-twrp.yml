@@ -108,6 +108,7 @@ jobs:
           TWRP_BRANCH="${{ github.event.inputs.twrp_branch }}"
           if [[ "$TWRP_BRANCH" == "twrp-9.0" || "$TWRP_BRANCH" == "twrp-8.0" || "$TWRP_BRANCH" == "twrp-7.0" || "$TWRP_BRANCH" == "twrp-6.0" ]]; then
             TARGET_BUILD_VARIANT="userdebug"
+            echo "TARGET_PLATFORM_VERSION=PPR1" >> $GITHUB_ENV
           else
             TARGET_BUILD_VARIANT="eng"
           fi
@@ -121,12 +122,7 @@ jobs:
           cd twrp
           source build/envsetup.sh
           lunch omni_${{ github.event.inputs.codename }}-${TARGET_BUILD_VARIANT}
-          TWRP_BRANCH="${{ github.event.inputs.twrp_branch }}"
-          if [[ "$TWRP_BRANCH" == "twrp-9.0" || "$TWRP_BRANCH" == "twrp-8.0" || "$TWRP_BRANCH" == "twrp-7.0" || "$TWRP_BRANCH" == "twrp-6.0" ]]; then
-            make -j$(nproc) recoveryimage TARGET_PLATFORM_VERSION=PPR1
-          else
-            make -j$(nproc) recoveryimage
-          fi
+          make -j$(nproc) recoveryimage
 
       - name: Upload recovery image as artifact
         uses: actions/upload-artifact@v4
