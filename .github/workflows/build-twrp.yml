@@ -216,12 +216,29 @@ jobs:
           cd device/${MANUFACTURER}/${CODENAME}
           git clone --depth=1 -b ${{ github.event.inputs.device_tree_branch }} ${{ github.event.inputs.device_tree_repo }} .
 
+      - name: 修复设备树内部硬编码路径（将制造商大小写修正）
+        id: fix_paths
+        run: |
+          DEVICE_PATH="twrp/device/${MANUFACTURER}/${CODENAME}"
+          # 常见的硬编码名称（例如制造商首字母大写、省略代号后缀等）
+          # 将 device/listeneer/Listeneer -> device/listeneer/listeneer-k9
+          MANUFACTURER_CAPS=$(echo "${MANUFACTURER}" | sed 's/\b\(.\)/\u\1/g') # 首字母大写
+          # 替换所有 .mk 文件中出现的 device/${MANUFACTURER}/${MANUFACTURER_CAPS} 为 device/${MANUFACTURER}/${CODENAME}
+          # 以及 device/${MANUFACTURER}/${MANUFACTURER} （不带 -k9）等
+          find "$DEVICE_PATH" -name "*.mk" -type f | while read -r file; do
+            sed -i "s|device/${MANUFACTURER}/${MANUFACTURER_CAPS}|device/${MANUFACTURER}/${CODENAME}|g" "$file"
+            sed -i "s|device/${MANUFACTURER}/${MANUFACTURER}|device/${MANUFACTURER}/${CODENAME}|g" "$file"
+            # 也替换 $(LOCAL_PATH)/../<制造商> 之类的
+            sed -i "s|\\\$(LOCAL_PATH)/../${MANUFACTURER_CAPS}|\\\$(LOCAL_PATH)/../${CODENAME}|g" "$file"
+            sed -i "s|\\\$(LOCAL_PATH)/../${MANUFACTURER}|\\\$(LOCAL_PATH)/../${CODENAME}|g" "$file"
+          done
+          echo "已修复路径硬编码问题"
+
       - name: 修复设备树文件名中的空格（自动重命名并更新 AndroidProducts.mk）
         id: fix_filenames
         run: |
           DEVICE_PATH="twrp/device/${MANUFACTURER}/${CODENAME}"
           echo "检查设备树中的 omni_*.mk 文件名是否包含空格..."
-          # 查找所有包含空格的 omni_*.mk 文件
           find "$DEVICE_PATH" -maxdepth 1 -name "omni_*.mk" | while read -r oldpath; do
             oldname=$(basename "$oldpath")
             if [[ "$oldname" == *" "* ]]; then
@@ -229,7 +246,6 @@ jobs:
               newpath="$DEVICE_PATH/$newname"
               echo "重命名: $oldname -> $newname"
               mv "$oldpath" "$newpath"
-              # 同时更新 AndroidProducts.mk 中对该文件的引用
               if [ -f "$DEVICE_PATH/AndroidProducts.mk" ]; then
                 sed -i "s/$oldname/$newname/g" "$DEVICE_PATH/AndroidProducts.mk"
                 echo "已更新 AndroidProducts.mk 中的引用"
