@@ -22,14 +22,7 @@ on:
         required: true
         type: string
       twrp_branch:
-        description: |
-          TWRP 源码分支（从以下分支中选择）：
-          - twrp-12.1 (Android 10+ 推荐)
-          - twrp-12.0
-          - twrp-11.0
-          - twrp-10.0
-          - twrp-9.0  (旧设备，如 Android 5.1 ~ 9.0)
-          系统将根据分支自动选择正确的 manifest 仓库和编译参数。
+        description: 'TWRP 源码分支（推荐 twrp-12.1，适用于 Android 10+）'
         required: true
         type: string
         default: 'twrp-12.1'
@@ -45,7 +38,6 @@ env:
 jobs:
   build:
     runs-on: ubuntu-22.04
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -74,14 +66,7 @@ jobs:
         run: |
           mkdir -p twrp
           cd twrp
-          TWRP_BRANCH="${{ github.event.inputs.twrp_branch }}"
-          if [[ "$TWRP_BRANCH" == "twrp-9.0" || "$TWRP_BRANCH" == "twrp-8.0" || "$TWRP_BRANCH" == "twrp-7.0" || "$TWRP_BRANCH" == "twrp-6.0" ]]; then
-            MANIFEST_URL="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git"
-          else
-            MANIFEST_URL="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git"
-          fi
-          echo "使用 manifest: ${MANIFEST_URL}, 分支: ${TWRP_BRANCH}"
-          repo init -u ${MANIFEST_URL} -b ${TWRP_BRANCH} --depth=1
+          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b ${{ github.event.inputs.twrp_branch }} --depth=1
 
       - name: Clone device tree
         run: |
@@ -90,76 +75,24 @@ jobs:
           cd device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}
           git clone --depth=1 -b ${{ github.event.inputs.device_tree_branch }} ${{ github.event.inputs.device_tree_repo }} .
 
-      - name: Fix TARGET_PLATFORM_VERSION for old branches
-        run: |
-          TWRP_BRANCH="${{ github.event.inputs.twrp_branch }}"
-          if [[ "$TWRP_BRANCH" == "twrp-9.0" || "$TWRP_BRANCH" == "twrp-8.0" || "$TWRP_BRANCH" == "twrp-7.0" || "$TWRP_BRANCH" == "twrp-6.0" ]]; then
-            DEVICE_DIR="twrp/device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}"
-            BOARD_CONFIG="${DEVICE_DIR}/BoardConfig.mk"
-            DEVICE_MK="${DEVICE_DIR}/device.mk"
-            
-            # 向 BoardConfig.mk 追加
-            if [ -f "$BOARD_CONFIG" ]; then
-              if ! grep -q "TARGET_PLATFORM_VERSION" "$BOARD_CONFIG"; then
-                echo "TARGET_PLATFORM_VERSION := PPR1" >> "$BOARD_CONFIG"
-                echo "PLATFORM_VERSION := PPR1" >> "$BOARD_CONFIG"
-                echo "已追加到 BoardConfig.mk"
-              else
-                echo "BoardConfig.mk 已包含相关定义"
-              fi
-            else
-              echo "BoardConfig.mk 不存在，将尝试 device.mk"
-            fi
-            
-            # 向 device.mk 追加（如果存在）
-            if [ -f "$DEVICE_MK" ]; then
-              if ! grep -q "TARGET_PLATFORM_VERSION" "$DEVICE_MK"; then
-                echo "TARGET_PLATFORM_VERSION := PPR1" >> "$DEVICE_MK"
-                echo "PLATFORM_VERSION := PPR1" >> "$DEVICE_MK"
-                echo "已追加到 device.mk"
-              fi
-            fi
-          fi
-
       - name: Sync TWRP source
         run: |
           cd twrp
           repo sync --current-branch --no-tags --no-clone-bundle --no-repo-verify --force-sync -j$(nproc)
 
-      - name: Create missing vendor/omni files
-        run: |
-          cd twrp
-          mkdir -p vendor/omni/config
-          if [ ! -f vendor/omni/config/common.mk ]; then
-            touch vendor/omni/config/common.mk
-          fi
-
       - name: Set up environment variables
         run: |
-          TWRP_BRANCH="${{ github.event.inputs.twrp_branch }}"
-          if [[ "$TWRP_BRANCH" == "twrp-9.0" || "$TWRP_BRANCH" == "twrp-8.0" || "$TWRP_BRANCH" == "twrp-7.0" || "$TWRP_BRANCH" == "twrp-6.0" ]]; then
-            TARGET_BUILD_VARIANT="userdebug"
-          else
-            TARGET_BUILD_VARIANT="eng"
-          fi
           echo "TARGET_PRODUCT=omni_${{ github.event.inputs.codename }}" >> $GITHUB_ENV
-          echo "TARGET_BUILD_VARIANT=${TARGET_BUILD_VARIANT}" >> $GITHUB_ENV
+          echo "TARGET_BUILD_VARIANT=eng" >> $GITHUB_ENV
           echo "OUT_DIR=${{ env.OUTPUT_DIR }}" >> $GITHUB_ENV
           echo "${{ github.event.inputs.extra_env }}" >> $GITHUB_ENV
 
       - name: Build TWRP
         run: |
           cd twrp
-          TWRP_BRANCH="${{ github.event.inputs.twrp_branch }}"
-          if [[ "$TWRP_BRANCH" == "twrp-9.0" || "$TWRP_BRANCH" == "twrp-8.0" || "$TWRP_BRANCH" == "twrp-7.0" || "$TWRP_BRANCH" == "twrp-6.0" ]]; then
-            export TARGET_PLATFORM_VERSION=PPR1
-            export PLATFORM_VERSION=PPR1
-            echo "强制导出 TARGET_PLATFORM_VERSION=PPR1, PLATFORM_VERSION=PPR1"
-          fi
           source build/envsetup.sh
-          lunch omni_${{ github.event.inputs.codename }}-${TARGET_BUILD_VARIANT}
-          # 即使上述未生效，在 make 命令中直接传递参数
-          make -j$(nproc) recoveryimage TARGET_PLATFORM_VERSION=PPR1 PLATFORM_VERSION=PPR1
+          lunch omni_${{ github.event.inputs.codename }}-eng
+          make -j$(nproc) recoveryimage
 
       - name: Upload recovery image as artifact
         uses: actions/upload-artifact@v4
