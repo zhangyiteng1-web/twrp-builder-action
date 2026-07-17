@@ -85,9 +85,7 @@ jobs:
       - name: Fix obsolete PRODUCT_STATIC_BOOT_CONTROL_HAL
         run: |
           DEVICE_PATH="twrp/device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}"
-          # 注释掉 device.mk 中的 PRODUCT_STATIC_BOOT_CONTROL_HAL 定义及其后续赋值
           sed -i '/^PRODUCT_STATIC_BOOT_CONTROL_HAL/,/^$/s/^/#/' "$DEVICE_PATH/device.mk"
-          # 将 full_base_telephony.mk 替换为 aosp_base.mk（如果存在）
           sed -i 's/full_base_telephony.mk/aosp_base.mk/g' "$DEVICE_PATH/device.mk"
           echo "已自动修复 device.mk"
 
@@ -113,8 +111,22 @@ jobs:
           lunch omni_${{ github.event.inputs.codename }}-eng
           make -j$(nproc) recoveryimage
 
+      - name: Find and upload recovery image
+        run: |
+          # 在 twrp 目录下查找 recovery.img
+          IMAGE_PATH=$(find twrp -name "recovery.img" -type f | head -n 1)
+          if [ -z "$IMAGE_PATH" ]; then
+            echo "错误：未找到 recovery.img"
+            exit 1
+          fi
+          echo "找到 recovery.img 在: $IMAGE_PATH"
+          # 将文件复制到当前工作目录下的 artifact 文件夹
+          mkdir -p artifact
+          cp "$IMAGE_PATH" artifact/recovery.img
+          echo "RECOVERY_IMAGE=artifact/recovery.img" >> $GITHUB_ENV
+
       - name: Upload recovery image as artifact
         uses: actions/upload-artifact@v4
         with:
           name: twrp-${{ github.event.inputs.codename }}
-          path: twrp/${{ env.OUTPUT_DIR }}/target/product/${{ github.event.inputs.codename }}/recovery.img
+          path: artifact/recovery.img
