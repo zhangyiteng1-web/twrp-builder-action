@@ -96,10 +96,15 @@ jobs:
           if [[ "$TWRP_BRANCH" == "twrp-9.0" || "$TWRP_BRANCH" == "twrp-8.0" || "$TWRP_BRANCH" == "twrp-7.0" || "$TWRP_BRANCH" == "twrp-6.0" ]]; then
             BOARD_CONFIG="twrp/device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}/BoardConfig.mk"
             if [ -f "$BOARD_CONFIG" ]; then
-              echo "TARGET_PLATFORM_VERSION := PPR1" >> "$BOARD_CONFIG"
-              echo "已添加 TARGET_PLATFORM_VERSION 到 BoardConfig.mk"
+              # 检查是否已经包含 TARGET_PLATFORM_VERSION，若没有则追加
+              if ! grep -q "TARGET_PLATFORM_VERSION" "$BOARD_CONFIG"; then
+                echo "TARGET_PLATFORM_VERSION := PPR1" >> "$BOARD_CONFIG"
+                echo "已添加 TARGET_PLATFORM_VERSION 到 BoardConfig.mk"
+              else
+                echo "BoardConfig.mk 已包含 TARGET_PLATFORM_VERSION，跳过"
+              fi
             else
-              echo "警告: BoardConfig.mk 不存在，请手动添加 TARGET_PLATFORM_VERSION := PPR1"
+              echo "警告: BoardConfig.mk 不存在，将在环境变量中强制设置"
             fi
           fi
 
@@ -132,6 +137,12 @@ jobs:
       - name: Build TWRP
         run: |
           cd twrp
+          # 针对旧分支强制设置平台版本
+          TWRP_BRANCH="${{ github.event.inputs.twrp_branch }}"
+          if [[ "$TWRP_BRANCH" == "twrp-9.0" || "$TWRP_BRANCH" == "twrp-8.0" || "$TWRP_BRANCH" == "twrp-7.0" || "$TWRP_BRANCH" == "twrp-6.0" ]]; then
+            export TARGET_PLATFORM_VERSION=PPR1
+            echo "已强制设置 TARGET_PLATFORM_VERSION=PPR1"
+          fi
           source build/envsetup.sh
           lunch omni_${{ github.event.inputs.codename }}-${TARGET_BUILD_VARIANT}
           make -j$(nproc) recoveryimage
