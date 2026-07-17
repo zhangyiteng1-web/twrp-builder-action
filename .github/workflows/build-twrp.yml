@@ -21,19 +21,17 @@ on:
         required: true
         type: string
       twrp_branch:
-        description: 'TWRP 源码分支'
+        description: 'TWRP 源码分支（下拉选择，来自官方仓库）'
         required: true
         type: choice
         options:
+          - twrp-14.1
+          - twrp-14
           - twrp-12.1
-          - twrp-12.0
-          - twrp-11.0
-          - twrp-10.0
+          - twrp-11
           - twrp-9.0
           - twrp-8.1
-          - twrp-8.0
           - twrp-7.1
-          - twrp-7.0
           - twrp-6.0
           - twrp-5.1
         default: 'twrp-12.1'
@@ -80,11 +78,19 @@ jobs:
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
 
-      - name: 初始化 TWRP 源码
+      - name: 初始化 TWRP 源码（自动选择 Manifest）
         run: |
           mkdir -p twrp
           cd twrp
-          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b ${{ github.event.inputs.twrp_branch }} --depth=1
+          TWRP_BRANCH="${{ github.event.inputs.twrp_branch }}"
+          # 9.0 及以下使用 omni，11 及以上使用 aosp（包括 twrp-11、twrp-12.1、twrp-14、twrp-14.1）
+          if [[ "$TWRP_BRANCH" == "twrp-9.0" || "$TWRP_BRANCH" == "twrp-8."* || "$TWRP_BRANCH" == "twrp-7."* || "$TWRP_BRANCH" == "twrp-6.0" || "$TWRP_BRANCH" == "twrp-5.1" ]]; then
+            MANIFEST_URL="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git"
+          else
+            MANIFEST_URL="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git"
+          fi
+          echo "使用 manifest: ${MANIFEST_URL}, 分支: ${TWRP_BRANCH}"
+          repo init -u ${MANIFEST_URL} -b ${TWRP_BRANCH} --depth=1
 
       - name: 克隆设备树
         run: |
