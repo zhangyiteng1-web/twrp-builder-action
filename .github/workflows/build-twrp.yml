@@ -22,7 +22,14 @@ on:
         required: true
         type: string
       twrp_branch:
-        description: 'TWRP 源码分支（推荐 twrp-12.1，适用 Android 10+）'
+        description: |
+          TWRP 源码分支（从以下分支中选择）：
+          - twrp-12.1 (Android 10+ 推荐)
+          - twrp-12.0
+          - twrp-11.0
+          - twrp-10.0
+          - twrp-9.0  (旧设备，如 Android 5.1 ~ 9.0)
+          系统将根据分支自动选择正确的 manifest 仓库。
         required: true
         type: string
         default: 'twrp-12.1'
@@ -31,11 +38,6 @@ on:
         required: false
         type: string
         default: ''
-      create_release:
-        description: '是否创建 Release 并上传 recovery.img'
-        required: false
-        type: boolean
-        default: false
 
 env:
   OUTPUT_DIR: out
@@ -43,6 +45,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-22.04
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -71,7 +74,14 @@ jobs:
         run: |
           mkdir -p twrp
           cd twrp
-          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b ${{ github.event.inputs.twrp_branch }} --depth=1
+          TWRP_BRANCH="${{ github.event.inputs.twrp_branch }}"
+          if [[ "$TWRP_BRANCH" == "twrp-9.0" || "$TWRP_BRANCH" == "twrp-8.0" || "$TWRP_BRANCH" == "twrp-7.0" || "$TWRP_BRANCH" == "twrp-6.0" ]]; then
+            MANIFEST_URL="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git"
+          else
+            MANIFEST_URL="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git"
+          fi
+          echo "使用 manifest: ${MANIFEST_URL}, 分支: ${TWRP_BRANCH}"
+          repo init -u ${MANIFEST_URL} -b ${TWRP_BRANCH} --depth=1
 
       - name: Clone device tree
         run: |
@@ -89,10 +99,9 @@ jobs:
         run: |
           cd twrp
           mkdir -p vendor/omni/config
-          touch vendor/omni/config/common.mk
-          # 某些设备树也可能需要以下文件，一并创建占位
-          mkdir -p vendor/omni/config
-          echo "# Placeholder" > vendor/omni/config/common.mk
+          if [ ! -f vendor/omni/config/common.mk ]; then
+            touch vendor/omni/config/common.mk
+          fi
 
       - name: Set up environment variables
         run: |
@@ -113,17 +122,3 @@ jobs:
         with:
           name: twrp-${{ github.event.inputs.codename }}
           path: twrp/${{ env.OUTPUT_DIR }}/target/product/${{ github.event.inputs.codename }}/recovery.img
-
-      - name: Create release (optional)
-        if: ${{ github.event.inputs.create_release }}
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: twrp-${{ github.event.inputs.codename }}-${{ github.run_number }}
-          name: "TWRP for ${{ github.event.inputs.manufacturer }} ${{ github.event.inputs.codename }}"
-          body: |
-            ## 自动编译的 TWRP
-            - **设备**: ${{ github.event.inputs.manufacturer }} ${{ github.event.inputs.codename }}
-            - **构建时间**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-            - **源码分支**: ${{ github.event.inputs.twrp_branch }}
-          files: |
-            twrp/${{ env.OUTPUT_DIR }}/target/product/${{ github.event.inputs.codename }}/recovery.img
