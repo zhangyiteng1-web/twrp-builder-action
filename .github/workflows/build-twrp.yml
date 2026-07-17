@@ -216,45 +216,39 @@ jobs:
           cd device/${MANUFACTURER}/${CODENAME}
           git clone --depth=1 -b ${{ github.event.inputs.device_tree_branch }} ${{ github.event.inputs.device_tree_repo }} .
 
-      - name: 修复设备树中的硬编码路径（仅替换错误引用）
-        run: |
-          DEVICE_PATH="twrp/device/${MANUFACTURER}/${CODENAME}"
-          echo "检查 ${DEVICE_PATH} 中所有硬编码的设备路径..."
-          find "$DEVICE_PATH" -name "*.mk" -type f | while read -r file; do
-            # 替换 device/制造商/任意代号 为 device/制造商/实际代号
-            # 只替换制造商等于当前 MANUFACTURER 的路径
-            sed -i "s|device/${MANUFACTURER}/[^/]*|device/${MANUFACTURER}/${CODENAME}|g" "$file"
-          done
-          echo "硬编码路径修复完成"
-
-      - name: 修复设备树文件名中的空格
-        run: |
-          DEVICE_PATH="twrp/device/${MANUFACTURER}/${CODENAME}"
-          find "$DEVICE_PATH" -maxdepth 1 -name "omni_*.mk" | while read -r oldpath; do
-            oldname=$(basename "$oldpath")
-            if [[ "$oldname" == *" "* ]]; then
-              newname=$(echo "$oldname" | sed 's/ /_/g')
-              newpath="$DEVICE_PATH/$newname"
-              echo "重命名: $oldname -> $newname"
-              mv "$oldpath" "$newpath"
-              if [ -f "$DEVICE_PATH/AndroidProducts.mk" ]; then
-                sed -i "s/$oldname/$newname/g" "$DEVICE_PATH/AndroidProducts.mk"
-                echo "已更新 AndroidProducts.mk"
-              fi
-            fi
-          done
-
-      - name: 检测设备树产品名
+      - name: 检测设备树产品名（从 omni_*.mk 或 AndroidProducts.mk 提取）
         id: detect_product
         run: |
           DEVICE_PATH="twrp/device/${MANUFACTURER}/${CODENAME}"
+          PRODUCT_NAME=""
+          # 方法1：查找 omni_*.mk 文件
           OMNIFILE=$(ls $DEVICE_PATH/omni_*.mk 2>/dev/null | head -1)
-          if [ -z "$OMNIFILE" ]; then
-            echo "错误：未找到 omni_*.mk 文件。设备树目录内容："
+          if [ -n "$OMNIFILE" ]; then
+            PRODUCT_NAME=$(basename "$OMNIFILE" .mk)
+          else
+            # 方法2：从 AndroidProducts.mk 提取
+            if [ -f "$DEVICE_PATH/AndroidProducts.mk" ]; then
+              # 提取 PRODUCT_MAKEFILES 中的第一个文件
+              MAKEFILES=$(grep -E '^PRODUCT_MAKEFILES\s*:=' "$DEVICE_PATH/AndroidProducts.mk" | head -1 | sed -E 's/^PRODUCT_MAKEFILES\s*:=//' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+              if [ -n "$MAKEFILES" ]; then
+                FIRST_FILE=$(echo "$MAKEFILES" | awk '{print $1}')
+                if [ -n "$FIRST_FILE" ]; then
+                  PRODUCT_NAME=$(basename "$FIRST_FILE" .mk)
+                fi
+              else
+                # 尝试 COMMON_LUNCH_CHOICES
+                CHOICES=$(grep -E '^COMMON_LUNCH_CHOICES\s*:=' "$DEVICE_PATH/AndroidProducts.mk" | head -1 | sed -E 's/^COMMON_LUNCH_CHOICES\s*:=//' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+                if [ -n "$CHOICES" ]; then
+                  PRODUCT_NAME=$(echo "$CHOICES" | awk '{print $1}')
+                fi
+              fi
+            fi
+          fi
+          if [ -z "$PRODUCT_NAME" ]; then
+            echo "错误：未找到产品名定义。设备树目录内容："
             ls -la $DEVICE_PATH/
             exit 1
           fi
-          PRODUCT_NAME=$(basename "$OMNIFILE" .mk)
           echo "检测到产品名: ${PRODUCT_NAME}"
           echo "PRODUCT_NAME=${PRODUCT_NAME}" >> $GITHUB_ENV
 
