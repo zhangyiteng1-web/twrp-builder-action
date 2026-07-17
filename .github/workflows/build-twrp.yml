@@ -7,7 +7,7 @@ on:
         description: '设备树仓库地址（HTTPS）'
         required: true
         type: string
-        default: 'https://github.com/yourusername/android_device_xiaomi_beryllium.git'
+        default: 'https://github.com/yourusername/android_device_xiaomi_evergo.git'
       device_tree_branch:
         description: '设备树分支（如 android-12.1）'
         required: true
@@ -17,10 +17,12 @@ on:
         description: '设备制造商（小写）'
         required: true
         type: string
+        default: 'xiaomi'
       codename:
         description: '设备代号（小写）'
         required: true
         type: string
+        default: 'evergo'
       twrp_branch:
         description: 'TWRP 源码分支（推荐 twrp-12.1，适用于 Android 10+）'
         required: true
@@ -79,6 +81,23 @@ jobs:
         run: |
           cd twrp
           repo sync --current-branch --no-tags --no-clone-bundle --no-repo-verify --force-sync -j$(nproc)
+
+      - name: Fix obsolete PRODUCT_STATIC_BOOT_CONTROL_HAL
+        run: |
+          DEVICE_PATH="twrp/device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}"
+          # 注释掉 device.mk 中的 PRODUCT_STATIC_BOOT_CONTROL_HAL 定义及其后续赋值
+          sed -i '/^PRODUCT_STATIC_BOOT_CONTROL_HAL/,/^$/s/^/#/' "$DEVICE_PATH/device.mk"
+          # 将 full_base_telephony.mk 替换为 aosp_base.mk（如果存在）
+          sed -i 's/full_base_telephony.mk/aosp_base.mk/g' "$DEVICE_PATH/device.mk"
+          echo "已自动修复 device.mk"
+
+      - name: Create missing vendor/omni files
+        run: |
+          cd twrp
+          mkdir -p vendor/omni/config
+          if [ ! -f vendor/omni/config/common.mk ]; then
+            touch vendor/omni/config/common.mk
+          fi
 
       - name: Set up environment variables
         run: |
