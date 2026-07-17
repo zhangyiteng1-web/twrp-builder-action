@@ -90,6 +90,19 @@ jobs:
           cd device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}
           git clone --depth=1 -b ${{ github.event.inputs.device_tree_branch }} ${{ github.event.inputs.device_tree_repo }} .
 
+      - name: Fix TARGET_PLATFORM_VERSION for old branches
+        run: |
+          TWRP_BRANCH="${{ github.event.inputs.twrp_branch }}"
+          if [[ "$TWRP_BRANCH" == "twrp-9.0" || "$TWRP_BRANCH" == "twrp-8.0" || "$TWRP_BRANCH" == "twrp-7.0" || "$TWRP_BRANCH" == "twrp-6.0" ]]; then
+            BOARD_CONFIG="twrp/device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}/BoardConfig.mk"
+            if [ -f "$BOARD_CONFIG" ]; then
+              echo "TARGET_PLATFORM_VERSION := PPR1" >> "$BOARD_CONFIG"
+              echo "已添加 TARGET_PLATFORM_VERSION 到 BoardConfig.mk"
+            else
+              echo "警告: BoardConfig.mk 不存在，请手动添加 TARGET_PLATFORM_VERSION := PPR1"
+            fi
+          fi
+
       - name: Sync TWRP source
         run: |
           cd twrp
@@ -108,7 +121,6 @@ jobs:
           TWRP_BRANCH="${{ github.event.inputs.twrp_branch }}"
           if [[ "$TWRP_BRANCH" == "twrp-9.0" || "$TWRP_BRANCH" == "twrp-8.0" || "$TWRP_BRANCH" == "twrp-7.0" || "$TWRP_BRANCH" == "twrp-6.0" ]]; then
             TARGET_BUILD_VARIANT="userdebug"
-            echo "TARGET_PLATFORM_VERSION=PPR1" >> $GITHUB_ENV
           else
             TARGET_BUILD_VARIANT="eng"
           fi
