@@ -29,7 +29,7 @@ on:
           - twrp-11.0
           - twrp-10.0
           - twrp-9.0  (旧设备，如 Android 5.1 ~ 9.0)
-          系统将根据分支自动选择正确的 manifest 仓库。
+          系统将根据分支自动选择正确的 manifest 仓库和编译参数。
         required: true
         type: string
         default: 'twrp-12.1'
@@ -75,6 +75,7 @@ jobs:
           mkdir -p twrp
           cd twrp
           TWRP_BRANCH="${{ github.event.inputs.twrp_branch }}"
+          # 根据分支选择 manifest
           if [[ "$TWRP_BRANCH" == "twrp-9.0" || "$TWRP_BRANCH" == "twrp-8.0" || "$TWRP_BRANCH" == "twrp-7.0" || "$TWRP_BRANCH" == "twrp-6.0" ]]; then
             MANIFEST_URL="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git"
           else
@@ -105,16 +106,30 @@ jobs:
 
       - name: Set up environment variables
         run: |
+          TWRP_BRANCH="${{ github.event.inputs.twrp_branch }}"
+          # 针对旧版本（9.0 及以下）调整构建类型和平台版本
+          if [[ "$TWRP_BRANCH" == "twrp-9.0" || "$TWRP_BRANCH" == "twrp-8.0" || "$TWRP_BRANCH" == "twrp-7.0" || "$TWRP_BRANCH" == "twrp-6.0" ]]; then
+            TARGET_BUILD_VARIANT="userdebug"
+            # 对于 9.0 使用 PPR1，其他版本可酌情调整，但大部分旧设备树会指定 PLATFORM_VERSION
+            # 所以统一设置 PPR1 通常可行，如有错误可再扩展
+            TARGET_PLATFORM_VERSION="PPR1"
+          else
+            TARGET_BUILD_VARIANT="eng"
+            # 新版本不需要手动设置平台版本
+          fi
           echo "TARGET_PRODUCT=omni_${{ github.event.inputs.codename }}" >> $GITHUB_ENV
-          echo "TARGET_BUILD_VARIANT=eng" >> $GITHUB_ENV
+          echo "TARGET_BUILD_VARIANT=${TARGET_BUILD_VARIANT}" >> $GITHUB_ENV
           echo "OUT_DIR=${{ env.OUTPUT_DIR }}" >> $GITHUB_ENV
+          if [[ -n "$TARGET_PLATFORM_VERSION" ]]; then
+            echo "TARGET_PLATFORM_VERSION=${TARGET_PLATFORM_VERSION}" >> $GITHUB_ENV
+          fi
           echo "${{ github.event.inputs.extra_env }}" >> $GITHUB_ENV
 
       - name: Build TWRP
         run: |
           cd twrp
           source build/envsetup.sh
-          lunch omni_${{ github.event.inputs.codename }}-eng
+          lunch omni_${{ github.event.inputs.codename }}-${TARGET_BUILD_VARIANT}
           make -j$(nproc) recoveryimage
 
       - name: Upload recovery image as artifact
