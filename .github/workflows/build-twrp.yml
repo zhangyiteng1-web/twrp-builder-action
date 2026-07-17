@@ -17,24 +17,14 @@ on:
         required: true
         type: string
       codename:
-        description: '设备代号（小写）'
+        description: '设备代号（小写，用于标识）'
         required: true
         type: string
-      twrp_branch:
-        description: 'TWRP 源码分支（下拉选择，来自官方仓库）'
+      android_version:
+        description: '安卓版本（如 5.1, 6.0, 7.1, 8.1, 9, 10, 11, 12, 12.1, 13, 14）'
         required: true
-        type: choice
-        options:
-          - twrp-14.1
-          - twrp-14
-          - twrp-12.1
-          - twrp-11
-          - twrp-9.0
-          - twrp-8.1
-          - twrp-7.1
-          - twrp-6.0
-          - twrp-5.1
-        default: 'twrp-12.1'
+        type: string
+        default: '12.1'
       is_ab_device:
         description: '是否为 A/B 分区设备（勾选则编译 boot.img，否则编译 recovery.img）'
         required: false
@@ -78,18 +68,120 @@ jobs:
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
 
-      - name: 初始化 TWRP 源码（自动选择 Manifest）
+      - name: 解析安卓版本并选择 TWRP 分支
+        id: select_branch
+        run: |
+          VER="${{ github.event.inputs.android_version }}"
+          # 规范化输入，去除 'Android' 前缀
+          VER=$(echo "$VER" | sed 's/Android //i' | sed 's/ android//i')
+          # 映射版本到 API level 和分支
+          case "$VER" in
+            14|"14.0")
+              API=34
+              BRANCH="twrp-14"
+              MANIFEST="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git"
+              IS_OLD=false
+              ;;
+            13|"13.0")
+              API=33
+              BRANCH="twrp-14"  # 兼容使用 twrp-14 分支
+              MANIFEST="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git"
+              IS_OLD=false
+              ;;
+            12.1|"12.1")
+              API=32
+              BRANCH="twrp-12.1"
+              MANIFEST="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git"
+              IS_OLD=false
+              ;;
+            12|"12.0")
+              API=31
+              BRANCH="twrp-12.1"  # 使用 12.1 分支兼容
+              MANIFEST="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git"
+              IS_OLD=false
+              ;;
+            11|"11.0")
+              API=30
+              BRANCH="twrp-11"
+              MANIFEST="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git"
+              IS_OLD=false
+              ;;
+            10|"10.0")
+              API=29
+              BRANCH="twrp-11"   # 兼容使用 twrp-11
+              MANIFEST="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git"
+              IS_OLD=false
+              ;;
+            9|"9.0")
+              API=28
+              BRANCH="twrp-9.0"
+              MANIFEST="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git"
+              IS_OLD=true
+              ;;
+            8.1|"8.1.0"|"8.1")
+              API=27
+              BRANCH="twrp-8.1"
+              MANIFEST="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git"
+              IS_OLD=true
+              ;;
+            8.0|"8.0.0"|"8")
+              API=26
+              BRANCH="twrp-8.1"   # 使用 8.1 分支兼容
+              MANIFEST="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git"
+              IS_OLD=true
+              ;;
+            7.1|"7.1.0"|"7.1.1"|"7.1.2")
+              API=25
+              BRANCH="twrp-7.1"
+              MANIFEST="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git"
+              IS_OLD=true
+              ;;
+            7.0|"7.0.0"|"7")
+              API=24
+              BRANCH="twrp-7.1"   # 使用 7.1 分支兼容
+              MANIFEST="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git"
+              IS_OLD=true
+              ;;
+            6.0|"6.0.0"|"6")
+              API=23
+              BRANCH="twrp-6.0"
+              MANIFEST="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git"
+              IS_OLD=true
+              ;;
+            5.1|"5.1.0"|"5.1.1")
+              API=22
+              BRANCH="twrp-5.1"
+              MANIFEST="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git"
+              IS_OLD=true
+              ;;
+            5.0|"5.0.0"|"5")
+              API=21
+              BRANCH="twrp-5.1"   # 使用 5.1 分支兼容
+              MANIFEST="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git"
+              IS_OLD=true
+              ;;
+            4.4|"4.4.0"|"4.4.1"|"4.4.2"|"4.4.3"|"4.4.4")
+              API=19
+              BRANCH="twrp-5.1"   # 老设备可用 5.1 分支
+              MANIFEST="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git"
+              IS_OLD=true
+              ;;
+            *)
+              echo "错误：不支持的安卓版本 '$VER'，请使用 4.4, 5.0, 5.1, 6.0, 7.0, 7.1, 8.0, 8.1, 9, 10, 11, 12, 12.1, 13, 14"
+              exit 1
+              ;;
+          esac
+          echo "解析版本 $VER -> API $API"
+          echo "选择的 TWRP 分支: $BRANCH"
+          echo "API_LEVEL=$API" >> $GITHUB_ENV
+          echo "TWRP_BRANCH=$BRANCH" >> $GITHUB_ENV
+          echo "MANIFEST_URL=$MANIFEST" >> $GITHUB_ENV
+          echo "IS_OLD=$IS_OLD" >> $GITHUB_ENV
+
+      - name: 初始化 TWRP 源码
         run: |
           mkdir -p twrp
           cd twrp
-          TWRP_BRANCH="${{ github.event.inputs.twrp_branch }}"
-          # 9.0 及以下使用 omni，11 及以上使用 aosp（包括 twrp-11、twrp-12.1、twrp-14、twrp-14.1）
-          if [[ "$TWRP_BRANCH" == "twrp-9.0" || "$TWRP_BRANCH" == "twrp-8."* || "$TWRP_BRANCH" == "twrp-7."* || "$TWRP_BRANCH" == "twrp-6.0" || "$TWRP_BRANCH" == "twrp-5.1" ]]; then
-            MANIFEST_URL="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git"
-          else
-            MANIFEST_URL="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git"
-          fi
-          echo "使用 manifest: ${MANIFEST_URL}, 分支: ${TWRP_BRANCH}"
           repo init -u ${MANIFEST_URL} -b ${TWRP_BRANCH} --depth=1
 
       - name: 克隆设备树
@@ -99,20 +191,39 @@ jobs:
           cd device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}
           git clone --depth=1 -b ${{ github.event.inputs.device_tree_branch }} ${{ github.event.inputs.device_tree_repo }} .
 
+      - name: 检测设备树产品名
+        id: detect_product
+        run: |
+          DEVICE_PATH="twrp/device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}"
+          OMNIFILE=$(ls $DEVICE_PATH/omni_*.mk 2>/dev/null | head -1)
+          if [ -z "$OMNIFILE" ]; then
+            echo "错误：未找到 omni_*.mk，请检查设备树是否正确。"
+            echo "设备树目录内容："
+            ls -la $DEVICE_PATH/
+            exit 1
+          fi
+          PRODUCT_NAME=$(basename "$OMNIFILE" .mk)
+          echo "检测到产品名: ${PRODUCT_NAME}"
+          echo "PRODUCT_NAME=${PRODUCT_NAME}" >> $GITHUB_ENV
+
       - name: 同步 TWRP 源码
         run: |
           cd twrp
           repo sync --current-branch --no-tags --no-clone-bundle --no-repo-verify --force-sync -j$(nproc)
 
-      - name: 修复过时的 PRODUCT_STATIC_BOOT_CONTROL_HAL
+      - name: 修复过时的 PRODUCT_STATIC_BOOT_CONTROL_HAL（仅对旧版本）
         run: |
-          DEVICE_PATH="twrp/device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}"
-          if [ -f "$DEVICE_PATH/device.mk" ]; then
-            sed -i '/^PRODUCT_STATIC_BOOT_CONTROL_HAL/,/^$/s/^/#/' "$DEVICE_PATH/device.mk"
-            sed -i 's/full_base_telephony.mk/aosp_base.mk/g' "$DEVICE_PATH/device.mk"
-            echo "已自动修复 device.mk"
+          if [ "$IS_OLD" == "true" ]; then
+            DEVICE_PATH="twrp/device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}"
+            if [ -f "$DEVICE_PATH/device.mk" ]; then
+              sed -i '/^PRODUCT_STATIC_BOOT_CONTROL_HAL/,/^$/s/^/#/' "$DEVICE_PATH/device.mk"
+              sed -i 's/full_base_telephony.mk/aosp_base.mk/g' "$DEVICE_PATH/device.mk"
+              echo "已自动修复 device.mk"
+            else
+              echo "未找到 device.mk，跳过修复"
+            fi
           else
-            echo "未找到 device.mk，跳过修复"
+            echo "新版本分支，无需修复 PRODUCT_STATIC_BOOT_CONTROL_HAL"
           fi
 
       - name: 创建缺失的 vendor/omni 文件
@@ -137,7 +248,6 @@ jobs:
             echo "ARTIFACT_NAME=twrp-recovery-${{ github.event.inputs.codename }}" >> $GITHUB_ENV
             echo "编译目标: recoveryimage，产物: recovery.img"
           fi
-          echo "TARGET_PRODUCT=omni_${{ github.event.inputs.codename }}" >> $GITHUB_ENV
           echo "TARGET_BUILD_VARIANT=eng" >> $GITHUB_ENV
           echo "OUT_DIR=${{ env.OUTPUT_DIR }}" >> $GITHUB_ENV
           echo "${{ github.event.inputs.extra_env }}" >> $GITHUB_ENV
@@ -146,11 +256,16 @@ jobs:
         run: |
           cd twrp
           source build/envsetup.sh
-          lunch omni_${{ github.event.inputs.codename }}-eng
-          make -j$(nproc) $TARGET_MAKE_TARGET
+          lunch ${PRODUCT_NAME}-${TARGET_BUILD_VARIANT}
+          if [ "$IS_OLD" == "true" ]; then
+            echo "应用旧版本修复：TARGET_PLATFORM_VERSION=PPR1"
+            make -j$(nproc) $TARGET_MAKE_TARGET TARGET_PLATFORM_VERSION=PPR1
+          else
+            make -j$(nproc) $TARGET_MAKE_TARGET
+          fi
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
-          path: twrp/${{ env.OUTPUT_DIR }}/target/product/${{ github.event.inputs.codename }}/${{ env.TARGET_IMG }}
+          path: twrp/${{ env.OUTPUT_DIR }}/target/product/${PRODUCT_NAME}/${{ env.TARGET_IMG }}
