@@ -1,4 +1,4 @@
-name: Build TWRP
+name: 编译 TWRP
 
 on:
   workflow_dispatch:
@@ -7,7 +7,6 @@ on:
         description: '设备树仓库地址（HTTPS）'
         required: true
         type: string
-        default: 'https://github.com/yourusername/android_device_xiaomi_evergo.git'
       device_tree_branch:
         description: '设备树分支（如 android-12.1）'
         required: true
@@ -17,14 +16,12 @@ on:
         description: '设备制造商（小写）'
         required: true
         type: string
-        default: 'xiaomi'
       codename:
         description: '设备代号（小写）'
         required: true
         type: string
-        default: 'evergo'
       twrp_branch:
-        description: 'TWRP 源码分支（推荐 twrp-12.1，适用于 Android 10+）'
+        description: 'TWRP 源码分支（推荐 twrp-12.1）'
         required: true
         type: string
         default: 'twrp-12.1'
@@ -41,10 +38,10 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout repository
+      - name: 检出仓库
         uses: actions/checkout@v4
 
-      - name: Set up build environment
+      - name: 设置编译环境
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -59,37 +56,41 @@ jobs:
           chmod a+x ~/.bin/repo
           echo "$HOME/.bin" >> $GITHUB_PATH
 
-      - name: Configure Git identity
+      - name: 配置 Git 身份信息
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
 
-      - name: Initialize TWRP source
+      - name: 初始化 TWRP 源码
         run: |
           mkdir -p twrp
           cd twrp
           repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b ${{ github.event.inputs.twrp_branch }} --depth=1
 
-      - name: Clone device tree
+      - name: 克隆设备树
         run: |
           cd twrp
           mkdir -p device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}
           cd device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}
           git clone --depth=1 -b ${{ github.event.inputs.device_tree_branch }} ${{ github.event.inputs.device_tree_repo }} .
 
-      - name: Sync TWRP source
+      - name: 同步 TWRP 源码
         run: |
           cd twrp
           repo sync --current-branch --no-tags --no-clone-bundle --no-repo-verify --force-sync -j$(nproc)
 
-      - name: Fix obsolete PRODUCT_STATIC_BOOT_CONTROL_HAL
+      - name: 修复过时的 PRODUCT_STATIC_BOOT_CONTROL_HAL
         run: |
           DEVICE_PATH="twrp/device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}"
-          sed -i '/^PRODUCT_STATIC_BOOT_CONTROL_HAL/,/^$/s/^/#/' "$DEVICE_PATH/device.mk"
-          sed -i 's/full_base_telephony.mk/aosp_base.mk/g' "$DEVICE_PATH/device.mk"
-          echo "已自动修复 device.mk"
+          if [ -f "$DEVICE_PATH/device.mk" ]; then
+            sed -i '/^PRODUCT_STATIC_BOOT_CONTROL_HAL/,/^$/s/^/#/' "$DEVICE_PATH/device.mk"
+            sed -i 's/full_base_telephony.mk/aosp_base.mk/g' "$DEVICE_PATH/device.mk"
+            echo "已自动修复 device.mk"
+          else
+            echo "未找到 device.mk，跳过修复"
+          fi
 
-      - name: Create missing vendor/omni files
+      - name: 创建缺失的 vendor/omni 文件
         run: |
           cd twrp
           mkdir -p vendor/omni/config
@@ -97,35 +98,33 @@ jobs:
             touch vendor/omni/config/common.mk
           fi
 
-      - name: Set up environment variables
+      - name: 设置环境变量
         run: |
           echo "TARGET_PRODUCT=omni_${{ github.event.inputs.codename }}" >> $GITHUB_ENV
           echo "TARGET_BUILD_VARIANT=eng" >> $GITHUB_ENV
           echo "OUT_DIR=${{ env.OUTPUT_DIR }}" >> $GITHUB_ENV
           echo "${{ github.event.inputs.extra_env }}" >> $GITHUB_ENV
 
-      - name: Build TWRP
+      - name: 编译 TWRP
         run: |
           cd twrp
           source build/envsetup.sh
           lunch omni_${{ github.event.inputs.codename }}-eng
           make -j$(nproc) recoveryimage
 
-      - name: Find and upload recovery image
+      - name: 查找并上传 recovery 镜像
         run: |
-          # 在 twrp 目录下查找 recovery.img
           IMAGE_PATH=$(find twrp -name "recovery.img" -type f | head -n 1)
           if [ -z "$IMAGE_PATH" ]; then
             echo "错误：未找到 recovery.img"
             exit 1
           fi
           echo "找到 recovery.img 在: $IMAGE_PATH"
-          # 将文件复制到当前工作目录下的 artifact 文件夹
           mkdir -p artifact
           cp "$IMAGE_PATH" artifact/recovery.img
           echo "RECOVERY_IMAGE=artifact/recovery.img" >> $GITHUB_ENV
 
-      - name: Upload recovery image as artifact
+      - name: 上传 recovery 镜像作为工件
         uses: actions/upload-artifact@v4
         with:
           name: twrp-${{ github.event.inputs.codename }}
