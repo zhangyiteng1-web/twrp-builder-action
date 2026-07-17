@@ -112,20 +112,31 @@ jobs:
           lunch omni_${{ github.event.inputs.codename }}-eng
           make -j$(nproc) recoveryimage
 
-      - name: 查找并上传 recovery 镜像
+      - name: 查找并复制 recovery 镜像
         run: |
+          echo "开始查找 recovery.img..."
           IMAGE_PATH=$(find twrp -name "recovery.img" -type f | head -n 1)
           if [ -z "$IMAGE_PATH" ]; then
-            echo "错误：未找到 recovery.img"
+            echo "未找到 recovery.img，尝试查找所有 .img 文件："
+            find twrp -name "*.img" -type f || echo "没有找到任何 .img 文件"
+            echo "twrp/out 目录结构（若存在）："
+            if [ -d "twrp/out" ]; then
+              find twrp/out -type d | head -20
+              find twrp/out -name "*.img" -type f
+            else
+              echo "twrp/out 目录不存在，显示 twrp 目录下部分内容："
+              ls -laR twrp/ | head -100
+            fi
+            echo "错误：未找到 recovery.img，编译可能失败或产物路径异常。"
             exit 1
           fi
           echo "找到 recovery.img 在: $IMAGE_PATH"
-          mkdir -p artifact
-          cp "$IMAGE_PATH" artifact/recovery.img
-          echo "RECOVERY_IMAGE=artifact/recovery.img" >> $GITHUB_ENV
+          # 复制到工作目录根目录，方便上传
+          cp "$IMAGE_PATH" recovery.img
+          echo "已复制 recovery.img 到当前目录"
 
-      - name: 上传 recovery 镜像作为工件
+      - name: 上传 recovery 镜像
         uses: actions/upload-artifact@v4
         with:
           name: twrp-${{ github.event.inputs.codename }}
-          path: artifact/recovery.img
+          path: recovery.img
