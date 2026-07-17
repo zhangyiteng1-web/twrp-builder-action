@@ -216,24 +216,40 @@ jobs:
           cd device/${MANUFACTURER}/${CODENAME}
           git clone --depth=1 -b ${{ github.event.inputs.device_tree_branch }} ${{ github.event.inputs.device_tree_repo }} .
 
-      - name: 检测设备树产品名（直接从 omni_*.mk 提取并清理）
+      - name: 修复设备树文件名中的空格（自动重命名并更新 AndroidProducts.mk）
+        id: fix_filenames
+        run: |
+          DEVICE_PATH="twrp/device/${MANUFACTURER}/${CODENAME}"
+          echo "检查设备树中的 omni_*.mk 文件名是否包含空格..."
+          # 查找所有包含空格的 omni_*.mk 文件
+          find "$DEVICE_PATH" -maxdepth 1 -name "omni_*.mk" | while read -r oldpath; do
+            oldname=$(basename "$oldpath")
+            if [[ "$oldname" == *" "* ]]; then
+              newname=$(echo "$oldname" | sed 's/ /_/g')
+              newpath="$DEVICE_PATH/$newname"
+              echo "重命名: $oldname -> $newname"
+              mv "$oldpath" "$newpath"
+              # 同时更新 AndroidProducts.mk 中对该文件的引用
+              if [ -f "$DEVICE_PATH/AndroidProducts.mk" ]; then
+                sed -i "s/$oldname/$newname/g" "$DEVICE_PATH/AndroidProducts.mk"
+                echo "已更新 AndroidProducts.mk 中的引用"
+              fi
+            fi
+          done
+
+      - name: 检测设备树产品名（直接从 omni_*.mk 提取文件名）
         id: detect_product
         run: |
           DEVICE_PATH="twrp/device/${MANUFACTURER}/${CODENAME}"
-          # 直接查找 omni_*.mk 文件
           OMNIFILE=$(ls $DEVICE_PATH/omni_*.mk 2>/dev/null | head -1)
           if [ -z "$OMNIFILE" ]; then
-            echo "错误：未找到 omni_*.mk 文件，请检查设备树是否正确。"
-            echo "设备树目录内容："
+            echo "错误：未找到 omni_*.mk 文件，请检查设备树。"
             ls -la $DEVICE_PATH/
             exit 1
           fi
           PRODUCT_NAME=$(basename "$OMNIFILE" .mk)
-          echo "原始产品名: ${PRODUCT_NAME}"
-          # 清理非法字符：替换空格和连字符为下划线，移除其他非字母数字下划线的字符
-          PRODUCT_NAME_CLEAN=$(echo "$PRODUCT_NAME" | sed 's/[ -]/_/g' | sed 's/[^a-zA-Z0-9_]//g')
-          echo "清理后产品名: ${PRODUCT_NAME_CLEAN}"
-          echo "PRODUCT_NAME=${PRODUCT_NAME_CLEAN}" >> $GITHUB_ENV
+          echo "检测到产品名: ${PRODUCT_NAME}"
+          echo "PRODUCT_NAME=${PRODUCT_NAME}" >> $GITHUB_ENV
 
       - name: 同步 TWRP 源码
         run: |
