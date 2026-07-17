@@ -115,23 +115,45 @@ jobs:
       - name: 查找并复制 recovery 镜像
         run: |
           echo "开始查找 recovery.img..."
-          IMAGE_PATH=$(find twrp -name "recovery.img" -type f | head -n 1)
-          if [ -z "$IMAGE_PATH" ]; then
-            echo "未找到 recovery.img，尝试查找所有 .img 文件："
-            find twrp -name "*.img" -type f || echo "没有找到任何 .img 文件"
-            echo "twrp/out 目录结构（若存在）："
-            if [ -d "twrp/out" ]; then
-              find twrp/out -type d | head -20
-              find twrp/out -name "*.img" -type f
+          # 1. 检查标准路径
+          STANDARD_PATH="twrp/out/target/product/${{ github.event.inputs.codename }}/recovery.img"
+          if [ -f "$STANDARD_PATH" ]; then
+            IMAGE_PATH="$STANDARD_PATH"
+            echo "找到标准路径: $IMAGE_PATH"
+          else
+            # 2. 尝试使用 OUT_DIR 环境变量
+            ALT_PATH="twrp/$OUT_DIR/target/product/${{ github.event.inputs.codename }}/recovery.img"
+            if [ -f "$ALT_PATH" ]; then
+              IMAGE_PATH="$ALT_PATH"
+              echo "找到备用路径: $IMAGE_PATH"
             else
-              echo "twrp/out 目录不存在，显示 twrp 目录下部分内容："
-              ls -laR twrp/ | head -100
+              # 3. 全局搜索（避免管道错误）
+              IMAGE_PATH=$(find twrp -name "recovery.img" -type f -print -quit 2>/dev/null || echo "")
+              if [ -n "$IMAGE_PATH" ]; then
+                echo "找到全局搜索路径: $IMAGE_PATH"
+              fi
             fi
-            echo "错误：未找到 recovery.img，编译可能失败或产物路径异常。"
+          fi
+
+          if [ -z "$IMAGE_PATH" ]; then
+            echo "❌ 未找到 recovery.img，以下是调试信息："
+            echo "--- 所有 .img 文件 ---"
+            find twrp -name "*.img" -type f 2>/dev/null || echo "没有找到任何 .img 文件"
+            echo "--- twrp/out 目录结构（前3层）---"
+            if [ -d "twrp/out" ]; then
+              find twrp/out -type d -maxdepth 3 2>/dev/null | sort
+              echo "--- 查找所有可能的 recovery 相关文件 ---"
+              find twrp/out -name "*recovery*" -type f 2>/dev/null | head -20
+            else
+              echo "twrp/out 目录不存在"
+              echo "--- twrp 目录下所有内容（前50行）---"
+              ls -laR twrp/ 2>/dev/null | head -50
+            fi
+            echo "请检查编译日志，确认 recovery.img 是否成功生成。"
             exit 1
           fi
-          echo "找到 recovery.img 在: $IMAGE_PATH"
-          # 复制到工作目录根目录，方便上传
+
+          echo "✅ 找到 recovery.img 在: $IMAGE_PATH"
           cp "$IMAGE_PATH" recovery.img
           echo "已复制 recovery.img 到当前目录"
 
