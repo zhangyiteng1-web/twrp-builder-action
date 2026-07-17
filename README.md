@@ -25,7 +25,7 @@
 
 ### 1. 前置条件
 
-- 已有一个可用的 TWRP 设备树仓库（可从 [twrpdtgen-action](https://github.com/yourname/twrpdtgen-action) 生成）
+- 已有一个可用的 TWRP 设备树仓库（可从 [twrpdtgen-action](https://github.com/zhanfyiteng1-web/twrpdtgen-action) 生成）
 - 设备树必须与目标 Android 版本匹配（例如 Android 12.1 设备树应使用 `android-12.1` 分支）
 
 ### 2. 运行工作流
