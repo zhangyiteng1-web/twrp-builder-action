@@ -216,36 +216,22 @@ jobs:
           cd device/${MANUFACTURER}/${CODENAME}
           git clone --depth=1 -b ${{ github.event.inputs.device_tree_branch }} ${{ github.event.inputs.device_tree_repo }} .
 
-      - name: 检测设备树产品名（从 AndroidProducts.mk 或 omni_*.mk 提取并清理）
+      - name: 检测设备树产品名（直接从 omni_*.mk 提取并清理）
         id: detect_product
         run: |
           DEVICE_PATH="twrp/device/${MANUFACTURER}/${CODENAME}"
-          PRODUCT_NAME=""
-          # 首先尝试从 AndroidProducts.mk 中提取
-          if [ -f "$DEVICE_PATH/AndroidProducts.mk" ]; then
-            echo "尝试从 AndroidProducts.mk 提取产品名..."
-            PRODUCT_NAME=$(grep -E '^PRODUCT_MAKEFILES\s*:=' "$DEVICE_PATH/AndroidProducts.mk" | sed -E 's/.*\s+(\S+\.mk).*/\1/' | head -1 | sed 's/\.mk$//')
-            if [ -z "$PRODUCT_NAME" ]; then
-              PRODUCT_NAME=$(grep -E '^COMMON_LUNCH_CHOICES\s*:=' "$DEVICE_PATH/AndroidProducts.mk" | sed -E 's/.*\s+(\S+)\s*/\1/' | head -1)
-            fi
-          fi
-          # 如果仍未找到，则回退到查找 omni_*.mk 文件
-          if [ -z "$PRODUCT_NAME" ]; then
-            echo "尝试从 omni_*.mk 文件提取..."
-            OMNIFILE=$(ls $DEVICE_PATH/omni_*.mk 2>/dev/null | head -1)
-            if [ -n "$OMNIFILE" ]; then
-              PRODUCT_NAME=$(basename "$OMNIFILE" .mk)
-            fi
-          fi
-          if [ -z "$PRODUCT_NAME" ]; then
-            echo "错误：未找到任何产品定义文件（AndroidProducts.mk 或 omni_*.mk）"
+          # 直接查找 omni_*.mk 文件
+          OMNIFILE=$(ls $DEVICE_PATH/omni_*.mk 2>/dev/null | head -1)
+          if [ -z "$OMNIFILE" ]; then
+            echo "错误：未找到 omni_*.mk 文件，请检查设备树是否正确。"
             echo "设备树目录内容："
             ls -la $DEVICE_PATH/
             exit 1
           fi
-          # 清理产品名：替换空格和连字符为下划线，去掉其他非法字符
-          PRODUCT_NAME_CLEAN=$(echo "$PRODUCT_NAME" | sed 's/[ -]/_/g' | sed 's/[^a-zA-Z0-9_]//g')
+          PRODUCT_NAME=$(basename "$OMNIFILE" .mk)
           echo "原始产品名: ${PRODUCT_NAME}"
+          # 清理非法字符：替换空格和连字符为下划线，移除其他非字母数字下划线的字符
+          PRODUCT_NAME_CLEAN=$(echo "$PRODUCT_NAME" | sed 's/[ -]/_/g' | sed 's/[^a-zA-Z0-9_]//g')
           echo "清理后产品名: ${PRODUCT_NAME_CLEAN}"
           echo "PRODUCT_NAME=${PRODUCT_NAME_CLEAN}" >> $GITHUB_ENV
 
