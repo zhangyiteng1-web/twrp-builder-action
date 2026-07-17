@@ -21,9 +21,21 @@ on:
         required: true
         type: string
       twrp_branch:
-        description: 'TWRP 源码分支（推荐 twrp-12.1）'
+        description: 'TWRP 源码分支'
         required: true
-        type: string
+        type: choice
+        options:
+          - twrp-12.1
+          - twrp-12.0
+          - twrp-11.0
+          - twrp-10.0
+          - twrp-9.0
+          - twrp-8.1
+          - twrp-8.0
+          - twrp-7.1
+          - twrp-7.0
+          - twrp-6.0
+          - twrp-5.1
         default: 'twrp-12.1'
       is_ab_device:
         description: '是否为 A/B 分区设备（勾选则编译 boot.img，否则编译 recovery.img）'
