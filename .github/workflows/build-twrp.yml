@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       device_tree_repo:
-        description: '设备树仓库地址（HTTPS），必须遵循 android_device_{制造商}_{代号} 格式'
+        description: '设备树仓库地址（HTTPS）'
         required: true
         type: string
       device_tree_branch:
@@ -12,6 +12,14 @@ on:
         required: true
         type: string
         default: 'android-12.1'
+      manufacturer:
+        description: '设备制造商（小写，如 xiaomi）'
+        required: true
+        type: string
+      codename:
+        description: '设备代号（小写，如 beryllium）'
+        required: true
+        type: string
       android_version:
         description: '安卓版本（如 5.1, 6.0, 7.1, 8.1, 9, 10, 11, 12, 12.1, 13, 14）'
         required: true
@@ -168,41 +176,6 @@ jobs:
           echo "MANIFEST_URL=$MANIFEST" >> $GITHUB_ENV
           echo "IS_OLD=$IS_OLD" >> $GITHUB_ENV
 
-      - name: 从设备树仓库 URL 解析制造商和代号
-        id: parse_device
-        run: |
-          REPO_URL="${{ github.event.inputs.device_tree_repo }}"
-          REPO_NAME=$(basename "$REPO_URL" .git)
-          echo "仓库名: $REPO_NAME"
-          IFS='_' read -ra PARTS <<< "$REPO_NAME"
-          LEN=${#PARTS[@]}
-          if [ $LEN -lt 2 ]; then
-            echo "错误：仓库名 '$REPO_NAME' 不包含足够的下划线分隔段，无法提取制造商和代号。"
-            echo "请确保仓库名遵循 'android_device_{制造商}_{代号}' 格式。"
-            exit 1
-          fi
-          CODENAME="${PARTS[-1]}"
-          MANUFACTURER="${PARTS[-2]}"
-          if [ "$MANUFACTURER" == "device" ]; then
-            if [ $LEN -ge 3 ]; then
-              MANUFACTURER="${PARTS[-3]}"
-            else
-              echo "错误：无法从仓库名提取制造商，请确保格式为 android_device_{制造商}_{代号}。"
-              exit 1
-            fi
-          fi
-          if [ "$MANUFACTURER" == "android" ]; then
-            if [ $LEN -ge 4 ]; then
-              MANUFACTURER="${PARTS[-4]}"
-            else
-              echo "错误：无法从仓库名提取制造商，请确保格式为 android_device_{制造商}_{代号}。"
-              exit 1
-            fi
-          fi
-          echo "解析到制造商: $MANUFACTURER, 代号: $CODENAME"
-          echo "MANUFACTURER=$MANUFACTURER" >> $GITHUB_ENV
-          echo "CODENAME=$CODENAME" >> $GITHUB_ENV
-
       - name: 初始化 TWRP 源码
         run: |
           mkdir -p twrp
@@ -212,43 +185,22 @@ jobs:
       - name: 克隆设备树
         run: |
           cd twrp
-          mkdir -p device/${MANUFACTURER}/${CODENAME}
-          cd device/${MANUFACTURER}/${CODENAME}
+          mkdir -p device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}
+          cd device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}
           git clone --depth=1 -b ${{ github.event.inputs.device_tree_branch }} ${{ github.event.inputs.device_tree_repo }} .
 
-      - name: 检测设备树产品名（从 omni_*.mk 或 AndroidProducts.mk 提取）
+      - name: 检测设备树产品名
         id: detect_product
         run: |
-          DEVICE_PATH="twrp/device/${MANUFACTURER}/${CODENAME}"
-          PRODUCT_NAME=""
-          # 方法1：查找 omni_*.mk 文件
+          DEVICE_PATH="twrp/device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}"
           OMNIFILE=$(ls $DEVICE_PATH/omni_*.mk 2>/dev/null | head -1)
-          if [ -n "$OMNIFILE" ]; then
-            PRODUCT_NAME=$(basename "$OMNIFILE" .mk)
-          else
-            # 方法2：从 AndroidProducts.mk 提取
-            if [ -f "$DEVICE_PATH/AndroidProducts.mk" ]; then
-              # 提取 PRODUCT_MAKEFILES 中的第一个文件
-              MAKEFILES=$(grep -E '^PRODUCT_MAKEFILES\s*:=' "$DEVICE_PATH/AndroidProducts.mk" | head -1 | sed -E 's/^PRODUCT_MAKEFILES\s*:=//' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
-              if [ -n "$MAKEFILES" ]; then
-                FIRST_FILE=$(echo "$MAKEFILES" | awk '{print $1}')
-                if [ -n "$FIRST_FILE" ]; then
-                  PRODUCT_NAME=$(basename "$FIRST_FILE" .mk)
-                fi
-              else
-                # 尝试 COMMON_LUNCH_CHOICES
-                CHOICES=$(grep -E '^COMMON_LUNCH_CHOICES\s*:=' "$DEVICE_PATH/AndroidProducts.mk" | head -1 | sed -E 's/^COMMON_LUNCH_CHOICES\s*:=//' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
-                if [ -n "$CHOICES" ]; then
-                  PRODUCT_NAME=$(echo "$CHOICES" | awk '{print $1}')
-                fi
-              fi
-            fi
-          fi
-          if [ -z "$PRODUCT_NAME" ]; then
-            echo "错误：未找到产品名定义。设备树目录内容："
+          if [ -z "$OMNIFILE" ]; then
+            echo "错误：未找到 omni_*.mk 文件，请检查设备树是否正确。"
+            echo "设备树目录内容："
             ls -la $DEVICE_PATH/
             exit 1
           fi
+          PRODUCT_NAME=$(basename "$OMNIFILE" .mk)
           echo "检测到产品名: ${PRODUCT_NAME}"
           echo "PRODUCT_NAME=${PRODUCT_NAME}" >> $GITHUB_ENV
 
@@ -260,7 +212,7 @@ jobs:
       - name: 修复过时的 PRODUCT_STATIC_BOOT_CONTROL_HAL（仅针对新版本）
         if: ${{ env.IS_OLD == 'false' }}
         run: |
-          DEVICE_PATH="twrp/device/${MANUFACTURER}/${CODENAME}"
+          DEVICE_PATH="twrp/device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}"
           if [ -f "$DEVICE_PATH/device.mk" ]; then
             sed -i '/^PRODUCT_STATIC_BOOT_CONTROL_HAL/,/^$/s/^/#/' "$DEVICE_PATH/device.mk"
             sed -i 's/full_base_telephony.mk/aosp_base.mk/g' "$DEVICE_PATH/device.mk"
@@ -283,12 +235,12 @@ jobs:
           if [ "${{ github.event.inputs.is_ab_device }}" == "true" ]; then
             echo "TARGET_MAKE_TARGET=bootimage" >> $GITHUB_ENV
             echo "TARGET_IMG=boot.img" >> $GITHUB_ENV
-            echo "ARTIFACT_NAME=twrp-boot-${CODENAME}" >> $GITHUB_ENV
+            echo "ARTIFACT_NAME=twrp-boot-${{ github.event.inputs.codename }}" >> $GITHUB_ENV
             echo "编译目标: bootimage，产物: boot.img"
           else
             echo "TARGET_MAKE_TARGET=recoveryimage" >> $GITHUB_ENV
             echo "TARGET_IMG=recovery.img" >> $GITHUB_ENV
-            echo "ARTIFACT_NAME=twrp-recovery-${CODENAME}" >> $GITHUB_ENV
+            echo "ARTIFACT_NAME=twrp-recovery-${{ github.event.inputs.codename }}" >> $GITHUB_ENV
             echo "编译目标: recoveryimage，产物: recovery.img"
           fi
           echo "TARGET_BUILD_VARIANT=eng" >> $GITHUB_ENV
