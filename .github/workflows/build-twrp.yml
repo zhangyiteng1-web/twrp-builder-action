@@ -143,6 +143,7 @@ jobs:
           echo "${{ github.event.inputs.extra_env }}" >> $GITHUB_ENV
 
       - name: 编译 TWRP
+        id: build
         run: |
           cd twrp
           source build/envsetup.sh
@@ -154,3 +155,23 @@ jobs:
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: twrp/${{ env.OUTPUT_DIR }}/target/product/${{ github.event.inputs.codename }}/${{ env.TARGET_IMG }}
+
+      - name: 发送 Server酱 推送通知
+        if: always()
+        env:
+          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+        run: |
+          if [ -z "$SERVERCHAN_KEY" ]; then
+            echo "未配置 SERVERCHAN_KEY，跳过推送"
+            exit 0
+          fi
+          if [ "${{ steps.build.outcome }}" == "success" ]; then
+            TITLE="✅ TWRP 编译成功"
+            CONTENT="设备: ${{ github.event.inputs.manufacturer }} ${{ github.event.inputs.codename }}\n分支: ${{ github.event.inputs.twrp_branch }}\n状态: 成功\n\n请前往 Actions 页面下载产物：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          else
+            TITLE="❌ TWRP 编译失败"
+            CONTENT="设备: ${{ github.event.inputs.manufacturer }} ${{ github.event.inputs.codename }}\n分支: ${{ github.event.inputs.twrp_branch }}\n状态: 失败\n\n请查看 Actions 日志：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+          curl -X POST "https://sctapi.ftqq.com/${SERVERCHAN_KEY}.send" \
+            -d "title=${TITLE}" \
+            -d "desp=${CONTENT}"
