@@ -13,11 +13,11 @@ on:
         type: string
         default: 'android-12.1'
       manufacturer:
-        description: '设备制造商（小写，如 xiaomi）'
+        description: '设备制造商（小写）'
         required: true
         type: string
       codename:
-        description: '设备代号（小写，如 beryllium）'
+        description: '设备代号（小写）'
         required: true
         type: string
       android_version:
@@ -189,21 +189,6 @@ jobs:
           cd device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}
           git clone --depth=1 -b ${{ github.event.inputs.device_tree_branch }} ${{ github.event.inputs.device_tree_repo }} .
 
-      - name: 检测设备树产品名
-        id: detect_product
-        run: |
-          DEVICE_PATH="twrp/device/${{ github.event.inputs.manufacturer }}/${{ github.event.inputs.codename }}"
-          OMNIFILE=$(ls $DEVICE_PATH/omni_*.mk 2>/dev/null | head -1)
-          if [ -z "$OMNIFILE" ]; then
-            echo "错误：未找到 omni_*.mk 文件，请检查设备树是否正确。"
-            echo "设备树目录内容："
-            ls -la $DEVICE_PATH/
-            exit 1
-          fi
-          PRODUCT_NAME=$(basename "$OMNIFILE" .mk)
-          echo "检测到产品名: ${PRODUCT_NAME}"
-          echo "PRODUCT_NAME=${PRODUCT_NAME}" >> $GITHUB_ENV
-
       - name: 同步 TWRP 源码
         run: |
           cd twrp
@@ -243,6 +228,7 @@ jobs:
             echo "ARTIFACT_NAME=twrp-recovery-${{ github.event.inputs.codename }}" >> $GITHUB_ENV
             echo "编译目标: recoveryimage，产物: recovery.img"
           fi
+          echo "PRODUCT_NAME=omni_${{ github.event.inputs.codename }}" >> $GITHUB_ENV
           echo "TARGET_BUILD_VARIANT=eng" >> $GITHUB_ENV
           echo "OUT_DIR=${{ env.OUTPUT_DIR }}" >> $GITHUB_ENV
           echo "${{ github.event.inputs.extra_env }}" >> $GITHUB_ENV
